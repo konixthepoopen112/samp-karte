@@ -272,7 +272,7 @@ const map = L.map('map', {
   attributionControl: false,
 });
 
-L.imageOverlay('https://raw.githubusercontent.com/lucasrennert/gta-sa-map/main/gtasa_map_hq.jpg', bounds).addTo(map);
+L.imageOverlay('gtasa_map_hq.jpg', bounds).addTo(map);
 map.fitBounds(bounds);
 
 // Fallback: use a known working HQ SA map
