@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SA:MP Karte</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',sans-serif; background:#0d0d0d; color:#e0e0e0; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* LOGIN SCREEN */
+  #login-screen {
+    position:fixed; inset:0; background:#0d0d0d;
+    display:flex; align-items:center; justify-content:center;
+    z-index:9999;
+  }
+  #login-box {
+    background:#141414; border:1px solid #2a2a2a; border-radius:12px;
+    padding:32px 36px; width:340px;
+  }
+  #login-box .login-title { font-size:22px; font-weight:600; color:#fff; margin-bottom:4px; text-align:center; }
+  #login-box .login-sub { font-size:13px; color:#555; margin-bottom:28px; text-align:center; }
+  #login-box label { font-size:11px; color:#555; text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:5px; }
+  #login-box input {
+    width:100%; background:#1a1a1a; border:1px solid #333; border-radius:6px;
+    color:#ddd; font-size:14px; padding:10px 14px; outline:none;
+    font-family:inherit; margin-bottom:14px;
+  }
+  #login-box input:focus { border-color:#c8a84b; }
+  #login-box .login-btn {
+    width:100%; padding:11px; background:#c8a84b; border:none; border-radius:6px;
+    color:#000; font-size:14px; font-weight:600; cursor:pointer; font-family:inherit; margin-top:4px;
+  }
+  #login-box .login-btn:hover { background:#dab94e; }
+  #login-box .login-btn:disabled { background:#555; color:#888; cursor:not-allowed; }
+  #login-error { font-size:12px; color:#cc3333; margin-top:10px; text-align:center; display:none; min-height:18px; }
+  #login-loading { font-size:12px; color:#555; margin-top:10px; text-align:center; display:none; }
+
+  /* TOPBAR */
+  #topbar {
+    background:#141414; border-bottom:1px solid #2a2a2a;
+    padding:0 16px; height:48px; display:flex; align-items:center; gap:12px;
+    flex-shrink:0; z-index:1000;
+  }
+  #topbar h1 { font-size:15px; font-weight:600; color:#fff; letter-spacing:.03em; }
+  #topbar .subtitle { font-size:12px; color:#555; }
+  #topbar .spacer { flex:1; }
+  #topbar .badge { font-size:11px; background:#1e1e1e; border:1px solid #333; border-radius:5px; padding:3px 10px; color:#aaa; }
+  #online-dot { width:7px; height:7px; border-radius:50%; background:#50c878; flex-shrink:0; }
+  #user-info { font-size:11px; color:#555; }
+  #logout-btn {
+    font-size:11px; padding:4px 10px; background:transparent;
+    border:1px solid #333; border-radius:5px; color:#777; cursor:pointer;
+  }
+  #logout-btn:hover { border-color:#555; color:#aaa; }
+
+  /* MODE BAR */
+  #mode-bar {
+    background:#111; border-bottom:1px solid #222;
+    padding:6px 16px; display:flex; align-items:center; gap:8px; flex-shrink:0;
+  }
+  .mode-btn { font-size:12px; padding:4px 12px; border-radius:5px; border:1px solid #333; background:transparent; color:#aaa; cursor:pointer; transition:all .15s; }
+  .mode-btn.active { background:#c8a84b; border-color:#c8a84b; color:#000; font-weight:600; }
+  .mode-btn:hover:not(.active) { border-color:#555; color:#ddd; }
+  #mode-label { font-size:12px; color:#555; margin-left:4px; }
+
+  /* LAYOUT */
+  #layout { display:flex; flex:1; overflow:hidden; }
+
+  #sidebar {
+    width:220px; min-width:220px; background:#111;
+    border-right:1px solid #222; overflow-y:auto; display:flex; flex-direction:column;
+  }
+  #sidebar::-webkit-scrollbar { width:4px; }
+  #sidebar::-webkit-scrollbar-thumb { background:#333; border-radius:2px; }
+
+  .sidebar-section { padding:10px 12px 4px; }
+  .sidebar-label { font-size:10px; color:#444; text-transform:uppercase; letter-spacing:.08em; margin-bottom:6px; }
+
+  .filter-btn {
+    width:100%; display:flex; align-items:center; gap:9px;
+    padding:7px 10px; border-radius:6px; border:1px solid transparent;
+    background:transparent; cursor:pointer; font-size:12px; color:#bbb;
+    transition:all .12s; text-align:left; margin-bottom:2px;
+  }
+  .filter-btn .icon { font-size:15px; width:20px; text-align:center; flex-shrink:0; }
+  .filter-btn .count { margin-left:auto; font-size:10px; background:#1e1e1e; border-radius:4px; padding:1px 6px; color:#555; min-width:22px; text-align:center; }
+  .filter-btn.active { background:#1a1a1a; border-color:#333; color:#fff; }
+  .filter-btn.active .count { background:#252525; color:#888; }
+  .filter-btn:hover { background:#181818; }
+  .filter-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+  .all-toggle { padding:10px 12px 8px; display:flex; gap:6px; }
+  .all-toggle button { flex:1; padding:5px; font-size:11px; background:#1a1a1a; border:1px solid #2a2a2a; border-radius:5px; color:#777; cursor:pointer; }
+  .all-toggle button:hover { border-color:#444; color:#bbb; }
+
+  /* MAP */
+  #map-container { flex:1; position:relative; }
+  #map { width:100%; height:100%; background:#1a2030; }
+
+  /* INFO */
+  #info-panel {
+    position:absolute; bottom:16px; right:16px;
+    background:#111; border:1px solid #2a2a2a; border-radius:8px;
+    padding:10px 14px; font-size:12px; color:#666; z-index:500;
+    pointer-events:none; min-width:180px;
+  }
+  #info-panel .info-title { font-size:11px; color:#444; margin-bottom:4px; text-transform:uppercase; letter-spacing:.05em; }
+
+  /* ADD FORM */
+  #add-form {
+    position:absolute; top:16px; right:16px;
+    background:#141414; border:1px solid #333; border-radius:10px;
+    padding:16px; z-index:600; width:230px; display:none;
+  }
+  #add-form h3 { font-size:13px; color:#fff; margin-bottom:12px; }
+  #add-form select, #add-form input[type=text] {
+    width:100%; background:#1a1a1a; border:1px solid #333; border-radius:5px;
+    color:#ddd; font-size:12px; padding:7px 10px; margin-bottom:8px;
+    outline:none; font-family:inherit;
+  }
+  #add-form select:focus, #add-form input:focus { border-color:#c8a84b; }
+  .form-btns { display:flex; gap:6px; }
+  .form-btns button { flex:1; padding:7px; font-size:12px; border-radius:5px; border:none; cursor:pointer; font-family:inherit; }
+  .btn-confirm { background:#c8a84b; color:#000; font-weight:600; }
+  .btn-cancel { background:#222; color:#aaa; border:1px solid #333 !important; }
+  .btn-confirm:hover { background:#dab94e; }
+  .btn-cancel:hover { background:#2a2a2a; }
+  .coord-preview { font-size:10px; color:#555; margin-bottom:8px; font-family:monospace; }
+
+  #export-btn {
+    position:absolute; top:16px; left:16px;
+    background:#141414; border:1px solid #333; border-radius:6px;
+    padding:6px 12px; font-size:12px; color:#aaa; cursor:pointer; z-index:600; transition:all .15s;
+  }
+  #export-btn:hover { border-color:#555; color:#fff; }
+
+  /* POPUPS */
+  .leaflet-popup-content-wrapper { background:#141414 !important; border:1px solid #333 !important; border-radius:8px !important; box-shadow:0 4px 20px rgba(0,0,0,.6) !important; }
+  .leaflet-popup-tip { background:#141414 !important; }
+  .leaflet-popup-content { margin:12px 14px !important; }
+  .leaflet-control-zoom a { background:#141414 !important; color:#aaa !important; border-color:#333 !important; }
+  .leaflet-control-zoom a:hover { background:#1e1e1e !important; color:#fff !important; }
+  .leaflet-control-attribution { display:none; }
+
+  .pin-popup { font-family:'Segoe UI',sans-serif; min-width:160px; }
+  .pin-popup .pop-cat { font-size:10px; text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; }
+  .pin-popup .pop-name { font-size:14px; font-weight:600; color:#fff; margin-bottom:6px; }
+  .pin-popup .pop-note { font-size:12px; color:#aaa; margin-bottom:8px; }
+  .pin-popup .pop-coords { font-size:10px; color:#555; font-family:monospace; }
+  .pin-popup .pop-who { font-size:10px; color:#444; margin-top:4px; }
+  .pin-popup button { margin-top:8px; padding:4px 10px; font-size:11px; background:#c00; border:none; color:#fff; border-radius:4px; cursor:pointer; width:100%; }
+  .pin-popup button:hover { background:#e00; }
+
+  #sync-status { font-size:11px; color:#555; }
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login-screen">
+  <div id="login-box">
+    <div class="login-title">🗺 SA:MP Karte</div>
+    <div class="login-sub">Melde dich mit deinem Account an</div>
+    <label>Email</label>
+    <input type="email" id="login-email" placeholder="deine@email.de" onkeydown="if(event.key==='Enter')document.getElementById('login-pw').focus()"/>
+    <label>Passwort</label>
+    <input type="password" id="login-pw" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/>
+    <button class="login-btn" id="login-btn" onclick="doLogin()">Einloggen</button>
+    <div id="login-error"></div>
+    <div id="login-loading">Einen Moment...</div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="topbar">
+  <div id="online-dot"></div>
+  <h1>🗺 SA:MP Karte</h1>
+  <span class="subtitle">San Andreas Roleplay</span>
+  <div class="spacer"></div>
+  <span id="sync-status">Verbinde...</span>
+  <span id="user-info"></span>
+  <button id="logout-btn" onclick="doLogout()">Ausloggen</button>
+  <span class="badge" id="pin-counter">0 Pins</span>
+</div>
+
+<div id="mode-bar">
+  <button class="mode-btn active" id="btn-view" onclick="setMode('view')">👁 Anschauen</button>
+  <button class="mode-btn" id="btn-add" onclick="setMode('add')">📍 Pin setzen</button>
+  <span id="mode-label">Klicke auf einen Pin um Details zu sehen</span>
+</div>
+
+<div id="layout">
+  <div id="sidebar">
+    <div class="all-toggle">
+      <button onclick="showAll()">Alle an</button>
+      <button onclick="hideAll()">Alle aus</button>
+    </div>
+    <div id="filter-list"></div>
+  </div>
+  <div id="map-container">
+    <div id="map"></div>
+    <div id="export-btn" onclick="exportData()">💾 Export JSON</div>
+    <div id="add-form">
+      <h3>📍 Neuen Pin setzen</h3>
+      <div class="coord-preview" id="coord-preview">Klicke auf die Karte...</div>
+      <select id="pin-category"></select>
+      <input type="text" id="pin-name" placeholder="Name / Bezeichnung"/>
+      <input type="text" id="pin-note" placeholder="Notiz (optional)"/>
+      <div class="form-btns">
+        <button class="btn-confirm" onclick="confirmPin()">Setzen</button>
+        <button class="btn-cancel" onclick="cancelPin()">Abbrechen</button>
+      </div>
+    </div>
+    <div id="info-panel">
+      <div class="info-title">Koordinaten</div>
+      <div id="coord-display">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const firebaseConfig = {
+  apiKey: "AIzaSyA3hifsU8qFWHuroMeOpXLgRjl96-fqN0c",
+  authDomain: "samp-karte.firebaseapp.com",
+  projectId: "samp-karte",
+  storageBucket: "samp-karte.firebasestorage.app",
+  messagingSenderId: "272541586380",
+  appId: "1:272541586380:web:47f58a9fba5c41f2f70369"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+const CATEGORIES = [
+  { id:"hehler",       label:"Hehler (Falschgeld)",      icon:"💰", color:"#f0c040" },
+  { id:"erpressung",   label:"Geschäfte Erpressung",     icon:"🏪", color:"#e07030" },
+  { id:"paynspray",    label:"Pay n Spray",              icon:"🎨", color:"#40b0e0" },
+  { id:"drogenkunde",  label:"Drogenkunden",             icon:"💊", color:"#a060d0" },
+  { id:"waffenkunde",  label:"Waffenkunden",             icon:"🔫", color:"#c04040" },
+  { id:"drogenlab",    label:"Drogenlabore",             icon:"🧪", color:"#50c878" },
+  { id:"lehrer",       label:"Fähigkeitslehrer",         icon:"🎓", color:"#60a0ff" },
+  { id:"eisen_klein",  label:"Klein Eisenguss",          icon:"⚙️",  color:"#909090" },
+  { id:"eisen_mittel", label:"Mittel Eisenguss",         icon:"🔩", color:"#b0b0b0" },
+  { id:"eisen_gross",  label:"Groß Eisenguss",           icon:"🏭", color:"#d0d0d0" },
+  { id:"autospawn",    label:"Auto Spawn (Einbrecher)",   icon:"🚗", color:"#ff8040" },
+  { id:"sprunk",       label:"Sprunk Geschäft",          icon:"🥤", color:"#40d060" },
+  { id:"schwarzmarkt", label:"Schwarzmarkt",             icon:"🕶️",  color:"#cc3333" },
+  { id:"clearzone",    label:"Clearzones",               icon:"🚫", color:"#ff4466" },
+];
+
+const sectionMap = {
+  'Kriminalität':      ['hehler','erpressung'],
+  'Kunden':            ['drogenkunde','waffenkunde'],
+  'Produktion':        ['drogenlab','lehrer','eisen_klein','eisen_mittel','eisen_gross'],
+  'Orte & Services':   ['paynspray'],
+  'Fahrzeuge & Shops': ['autospawn','sprunk','schwarzmarkt'],
+  'Zonen':             ['clearzone'],
+};
+
+let map, activeCategories, layerGroups, currentMode, pendingLatLng, currentUser;
+
+// ── LOGIN ─────────────────────────────────────────────────
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pw = document.getElementById('login-pw').value;
+  const errEl = document.getElementById('login-error');
+  const loadEl = document.getElementById('login-loading');
+  const btn = document.getElementById('login-btn');
+
+  errEl.style.display = 'none';
+  loadEl.style.display = 'block';
+  btn.disabled = true;
+
+  auth.signInWithEmailAndPassword(email, pw)
+    .catch(err => {
+      loadEl.style.display = 'none';
+      btn.disabled = false;
+      errEl.style.display = 'block';
+      if(err.code === 'auth/wrong-password' || err.code === 'auth/user-not-found' || err.code === 'auth/invalid-credential') {
+        errEl.textContent = '❌ Falsche Email oder falsches Passwort.';
+      } else if(err.code === 'auth/invalid-email') {
+        errEl.textContent = '❌ Keine gültige Email-Adresse.';
+      } else if(err.code === 'auth/too-many-requests') {
+        errEl.textContent = '❌ Zu viele Versuche. Kurz warten.';
+      } else {
+        errEl.textContent = '❌ Fehler: ' + err.message;
+      }
+    });
+}
+
+function doLogout() {
+  auth.signOut();
+}
+
+// Auth state listener — startet App wenn eingeloggt
+auth.onAuthStateChanged(user => {
+  if(user) {
+    currentUser = user;
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('user-info').textContent = user.email;
+    if(!map) initApp();
+  } else {
+    currentUser = null;
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('login-loading').style.display = 'none';
+    document.getElementById('login-btn').disabled = false;
+  }
+});
+
+// ── APP INIT ──────────────────────────────────────────────
+function initApp() {
+  activeCategories = new Set(CATEGORIES.map(c => c.id));
+  layerGroups = {};
+  currentMode = 'view';
+  pendingLatLng = null;
+
+  map = L.map('map', {
+    crs: L.CRS.Simple,
+    minZoom: -2, maxZoom: 3, zoomSnap: 0.25,
+    attributionControl: false,
+  });
+
+  L.imageOverlay('gtasa_map_hq.jpg', [[0,0],[2048,2048]]).addTo(map);
+  map.fitBounds([[0,0],[2048,2048]]);
+
+  CATEGORIES.forEach(cat => {
+    layerGroups[cat.id] = L.layerGroup().addTo(map);
+  });
+
+  buildSidebar();
+  buildCategorySelect();
+  startFirebaseSync();
+
+  map.on('click', e => {
+    if(currentMode !== 'add') return;
+    pendingLatLng = e.latlng;
+    document.getElementById('coord-preview').textContent = `x: ${Math.round(e.latlng.lng)}  y: ${Math.round(e.latlng.lat)}`;
+    document.getElementById('add-form').style.display = 'block';
+    document.getElementById('pin-name').focus();
+  });
+
+  map.on('mousemove', e => {
+    document.getElementById('coord-display').textContent = `x: ${Math.round(e.latlng.lng)}  y: ${Math.round(e.latlng.lat)}`;
+  });
+}
+
+// ── FIREBASE SYNC ─────────────────────────────────────────
+function startFirebaseSync() {
+  document.getElementById('sync-status').textContent = 'Verbinde...';
+  db.collection('pins').onSnapshot(snapshot => {
+    document.getElementById('sync-status').textContent = '🟢 Live';
+    CATEGORIES.forEach(cat => layerGroups[cat.id].clearLayers());
+    let total = 0;
+    snapshot.forEach(doc => {
+      addMarkerToMap({ id: doc.id, ...doc.data() });
+      total++;
+    });
+    document.getElementById('pin-counter').textContent = total + ' Pins';
+    updateFilterCounts(snapshot);
+  }, () => {
+    document.getElementById('sync-status').textContent = '🔴 Offline';
+  });
+}
+
+function addMarkerToMap(pin) {
+  const cat = CATEGORIES.find(c => c.id === pin.cat);
+  if(!cat) return;
+  const marker = L.marker([pin.y, pin.x], { icon: makeIcon(cat) });
+  marker.bindPopup(makePopupHTML(pin, cat), { maxWidth:240 });
+  marker.addTo(layerGroups[pin.cat]);
+}
+
+function makeIcon(cat, size=30) {
+  return L.divIcon({
+    className:'',
+    html:`<div style="background:${cat.color};width:${size}px;height:${size}px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:${size*0.5}px;border:2px solid rgba(0,0,0,.5);box-shadow:0 2px 6px rgba(0,0,0,.7);cursor:pointer;">${cat.icon}</div>`,
+    iconSize:[size,size], iconAnchor:[size/2,size/2]
+  });
+}
+
+function makePopupHTML(pin, cat) {
+  return `<div class="pin-popup">
+    <div class="pop-cat" style="color:${cat.color}">${cat.icon} ${cat.label}</div>
+    <div class="pop-name">${pin.name || 'Unbenannt'}</div>
+    ${pin.note ? `<div class="pop-note">${pin.note}</div>` : ''}
+    <div class="pop-coords">x:${Math.round(pin.x)} y:${Math.round(pin.y)}</div>
+    ${pin.addedBy ? `<div class="pop-who">von ${pin.addedBy}</div>` : ''}
+    <button onclick="deletePin('${pin.id}')">🗑 Pin löschen</button>
+  </div>`;
+}
+
+function deletePin(id) {
+  db.collection('pins').doc(id).delete();
+  map.closePopup();
+}
+window.deletePin = deletePin;
+
+function updateFilterCounts(snapshot) {
+  const counts = {};
+  snapshot.forEach(doc => {
+    const cat = doc.data().cat;
+    counts[cat] = (counts[cat] || 0) + 1;
+  });
+  CATEGORIES.forEach(cat => {
+    const el = document.getElementById('count-' + cat.id);
+    if(el) el.textContent = counts[cat.id] || 0;
+  });
+}
+
+// ── PIN SETZEN ────────────────────────────────────────────
+function confirmPin() {
+  if(!pendingLatLng || !currentUser) return;
+  const cat = document.getElementById('pin-category').value;
+  const name = document.getElementById('pin-name').value.trim() || 'Unbenannt';
+  const note = document.getElementById('pin-note').value.trim();
+  db.collection('pins').add({
+    cat, name, note,
+    x: pendingLatLng.lng,
+    y: pendingLatLng.lat,
+    addedBy: currentUser.email,
+    addedAt: firebase.firestore.FieldValue.serverTimestamp()
+  });
+  document.getElementById('add-form').style.display = 'none';
+  document.getElementById('pin-name').value = '';
+  document.getElementById('pin-note').value = '';
+  pendingLatLng = null;
+  setMode('view');
+}
+
+function cancelPin() {
+  document.getElementById('add-form').style.display = 'none';
+  pendingLatLng = null;
+}
+
+// ── MODUS ─────────────────────────────────────────────────
+function setMode(m) {
+  currentMode = m;
+  document.getElementById('btn-view').classList.toggle('active', m==='view');
+  document.getElementById('btn-add').classList.toggle('active', m==='add');
+  document.getElementById('mode-label').textContent = m==='view'
+    ? 'Klicke auf einen Pin um Details zu sehen'
+    : '🖱 Klicke auf die Karte um einen Pin zu setzen';
+  if(map) map.getContainer().style.cursor = m==='add' ? 'crosshair' : '';
+  if(m==='view') { document.getElementById('add-form').style.display='none'; pendingLatLng=null; }
+}
+
+// ── FILTER ────────────────────────────────────────────────
+function toggleCategory(id, btn) {
+  if(activeCategories.has(id)) {
+    activeCategories.delete(id);
+    map.removeLayer(layerGroups[id]);
+    btn.classList.remove('active');
+  } else {
+    activeCategories.add(id);
+    layerGroups[id].addTo(map);
+    btn.classList.add('active');
+  }
+}
+function showAll() {
+  CATEGORIES.forEach(cat => {
+    activeCategories.add(cat.id);
+    layerGroups[cat.id].addTo(map);
+    document.getElementById('filter-'+cat.id)?.classList.add('active');
+  });
+}
+function hideAll() {
+  CATEGORIES.forEach(cat => {
+    activeCategories.delete(cat.id);
+    map.removeLayer(layerGroups[cat.id]);
+    document.getElementById('filter-'+cat.id)?.classList.remove('active');
+  });
+}
+
+// ── SIDEBAR ───────────────────────────────────────────────
+function buildSidebar() {
+  const filterList = document.getElementById('filter-list');
+  Object.entries(sectionMap).forEach(([sec, ids]) => {
+    const secDiv = document.createElement('div');
+    secDiv.className = 'sidebar-section';
+    secDiv.innerHTML = `<div class="sidebar-label">${sec}</div>`;
+    ids.forEach(id => {
+      const cat = CATEGORIES.find(c => c.id === id);
+      if(!cat) return;
+      const btn = document.createElement('button');
+      btn.className = 'filter-btn active';
+      btn.id = 'filter-' + cat.id;
+      btn.innerHTML = `<span class="filter-dot" style="background:${cat.color}"></span><span class="icon">${cat.icon}</span><span style="flex:1">${cat.label}</span><span class="count" id="count-${cat.id}">0</span>`;
+      btn.onclick = () => toggleCategory(cat.id, btn);
+      secDiv.appendChild(btn);
+    });
+    filterList.appendChild(secDiv);
+  });
+}
+
+function buildCategorySelect() {
+  const sel = document.getElementById('pin-category');
+  CATEGORIES.forEach(cat => {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = cat.icon + ' ' + cat.label;
+    sel.appendChild(opt);
+  });
+}
+
+// ── EXPORT ────────────────────────────────────────────────
+async function exportData() {
+  const snap = await db.collection('pins').get();
+  const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'samp_pins.json';
+  a.click();
+}
+</script>
+</body>
+</html>
